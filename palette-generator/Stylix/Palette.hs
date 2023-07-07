@@ -5,7 +5,7 @@ module Stylix.Palette ( ) where
 import Ai.Evolutionary ( Species(..) )
 import Codec.Picture ( Image(imageWidth, imageHeight), PixelRGB8(PixelRGB8), pixelAt )
 import Data.Bifunctor ( second )
-import Data.Colour ( LAB(lightness), RGB(RGB), deltaE, rgb2lab )
+import Data.Colour ( LAB(LAB, lightness, channelA, channelB), RGB(RGB, red, green, blue), deltaE, rgb2lab, lab2rgb )
 import Data.List ( delete )
 import Data.Vector ( (//) )
 import qualified Data.Vector as V
@@ -39,6 +39,21 @@ randomFromImage generator image
         color = RGB (fromIntegral r) (fromIntegral g) (fromIntegral b)
      in (rgb2lab color, generator'')
 
+mkTriads :: (Floating a, Num a, Ord a) => Int -> LAB a -> [(Int, LAB a)]
+mkTriads n c = map (\i -> (pos n i, shiftColour i c)) ([-1 .. 1])
+  where
+    rotate :: (Floating a) => a -> LAB a -> LAB a
+    rotate ang (LAB{lightness=l, channelA=chA, channelB=chB}) = LAB{lightness=l, channelA=chA', channelB=chB'}
+      where
+        theta = ang * pi / 180
+        chA' = chA * (cos theta) + chB * (-sin theta)
+        chB' = chA * (sin theta) + chB * (cos theta)
+    pos :: Int -> Int -> Int
+    pos n i = ((n + i) `mod` 8) + 8
+    shiftColour :: (Floating a) => Int -> LAB a -> LAB a
+    shiftColour i c = (rotate ((fromIntegral i) * (60.0 / 3.0))) c
+
+
 instance (Floating a, Real a) => Species (String, (Image PixelRGB8)) (V.Vector (LAB a)) where
   {- |
   Palettes in the initial population are created by randomly
@@ -59,7 +74,14 @@ instance (Floating a, Real a) => Species (String, (Image PixelRGB8)) (V.Vector (
   mutate (_, image) generator palette
     = let (index, generator') = randomR (0, 15) generator
           (colour, generator'') = randomFromImage generator' image
-       in (generator'', palette // [(index, colour)])
+          update = case "triad" of
+            "sample" -> [(index, colour)]
+            "triad" -> if index < 8 then
+                         [(index, colour)]
+                       else
+                         mkTriads index colour
+            _ -> error ("Invalid mutation mode")
+       in (generator'', palette // update)
 
   fitness (polarity, _) palette
     = realToFrac $ accentDifference - (primarySimilarity/10) - scheme
