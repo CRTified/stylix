@@ -42,10 +42,12 @@ instance Species (String, Image PixelRGB8) (V.Vector LAB) where
   mutate (_, image) palette = do
     index <- randomRIO (0, 15)
     colour <- randomFromImage image
-    return $ palette // [(index, colour)]
+    return $ palette // [(index, colour{lightness=targetLuminance !! index})]
+    where
+      targetLuminance = [10, 30, 45, 65, 75, 90, 95, 95, 60, 60, 60, 60, 60, 60, 60, 60]
 
   fitness (polarity, _) palette
-    = realToFrac $ accentDifference - (primarySimilarity/10) - scheme
+    = realToFrac $ primaryAccentDifference * accentDifference - primarySimilarity - 1.5**(scheme / 2)
       where
         -- The primary scale should use similar colours, to an extent.
         primarySimilarity = maximum $ do
@@ -61,6 +63,12 @@ instance Species (String, Image PixelRGB8) (V.Vector LAB) where
               y = accent palette V.! index_y
           return $ deltaE x y
 
+        -- The accent colours should be as different to the primary as possible.
+        primaryAccentDifference = minimum $ do
+          a <- primary palette
+          b <- accent palette
+          return $ (deltaE a b)
+
         -- Helpers for the function below.
         lightnesses = V.map lightness palette
         difference a b = abs $ a - b
@@ -69,8 +77,7 @@ instance Species (String, Image PixelRGB8) (V.Vector LAB) where
           -- The primary scale's lightnesses should match the given pattern.
           = sum (V.zipWith difference primaryScale $ primary lightnesses)
           -- The accent colours should all have the given lightness.
-          + sum (V.map (difference accentValue) $ accent lightnesses)
-
+          + (sum (V.map (difference accentValue) $ accent lightnesses))
         scheme = case polarity of
           "either" -> min lightScheme darkScheme
           "light" -> lightScheme
